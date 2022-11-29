@@ -37,6 +37,6 @@ for _data_name in ['CAMO', 'COD10K', 'CHAMELEON']:
         res = res.sigmoid().data.cpu().numpy().squeeze()
         res = (res - res.min()) / (res.max() - res.min() + 1e-8)
         print('> {} - {}'.format(_data_name, name))
-        misc.imsave(save_path+name, res)
+        # misc.imsave(save_path+name, res)
         # If `mics` not works in your environment, please comment it and then use CV2
-        # cv2.imwrite(save_path+name,res*255)
+        cv2.imwrite(save_path+name,res*255)
