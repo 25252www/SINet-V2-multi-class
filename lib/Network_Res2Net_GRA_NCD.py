@@ -206,6 +206,10 @@ class Network(nn.Module):
         S_3 = ra2_feat + guidance_4
         S_3_pred = F.interpolate(S_3, scale_factor=8, mode='bilinear')   # Sup-4 (bs, 1, 44, 44) -> (bs, 1, 352, 352)
 
+        print('shape of S_g_pred:',np.shape(S_g_pred))
+        print('shape of S_5_pred:',np.shape(S_5_pred))
+        print('shape of S_4_pred:',np.shape(S_4_pred))
+        print('shape of S_3_pred:',np.shape(S_3_pred))
         return S_g_pred, S_5_pred, S_4_pred, S_3_pred
 
 
