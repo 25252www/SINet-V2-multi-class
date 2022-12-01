@@ -5,6 +5,8 @@ import torchvision.transforms as transforms
 import random
 import numpy as np
 from PIL import ImageEnhance
+import imageio
+from tqdm import tqdm
 
 
 # several data augumentation strategies
@@ -84,12 +86,17 @@ def randomPeper(img):
 
 # dataset for training
 class PolypObjDataset(data.Dataset):
+
+    # CLASSES = {'0':'background','1':'batFish','2':'clownFish','3':'crab','4':'crocodile','5':'crocodileFish','6':'fish','7':'flounder','8':'frogFish','9':'ghostPipefish','10':'leafySeaDragon','11':'octopus','12':'pagurian','13':'pipefish','14':'scorpionFish','15':'seaHorse','16':'shrimp','17':'slug','18':'starFish','19':'stingaree','20':'turtle','21':'ant','22':'bug','23':'cat','24':'caterpillar','25':'centipede','26':'chameleon','27':'cheetah','28':'deer','29':'dog','30':'duck','31':'gecko','32':'giraffe','33':'grouse','34':'human','35':'kangaroo','36':'leopard','37':'lion','38':'lizard','39':'monkey','40':'rabbit','41':'reccoon','42':'sciuridae','43':'sheep','44':'snake','45':'spider','46':'stickInsect','47':'tiger','48':'wolf','49':'worm','50':'bat','51':'bee','52':'beetle','53':'bird','54':'bittern','55':'butterfly','56':'cicada','57':'dragonfly','58':'frogmouth','59':'grasshopper','60':'heron','61':'katydid','62':'mantis','63':'mockingbird','64':'moth','65':'owl','66':'owlfly','67':'frog','68':'toad','69':'other'}
+    CLASSES = ['background', 'batfish', 'clownfish', 'crab', 'crocodile', 'crocodilefish', 'fish', 'flounder', 'frogfish', 'ghostpipefish', 'leafyseadragon', 'octopus', 'pagurian', 'pipefish', 'scorpionfish', 'seahorse', 'shrimp', 'slug', 'starfish', 'stingaree', 'turtle', 'ant', 'bug', 'cat', 'caterpillar', 'centipede', 'chameleon', 'cheetah', 'deer', 'dog', 'duck', 'gecko', 'giraffe', 'grouse', 'human', 'kangaroo', 'leopard', 'lion', 'lizard', 'monkey', 'rabbit', 'reccoon', 'sciuridae', 'sheep', 'snake', 'spider', 'stickinsect', 'tiger', 'wolf', 'worm', 'bat', 'bee', 'beetle', 'bird', 'bittern', 'butterfly', 'cicada', 'dragonfly', 'frogmouth', 'grasshopper', 'heron', 'katydid', 'mantis', 'mockingbird', 'moth', 'owl', 'owlfly', 'frog', 'toad', 'other']
+
     def __init__(self, image_root, gt_root, trainsize):
         self.trainsize = trainsize
         # get filenames
-        self.images = [image_root + f for f in os.listdir(image_root) if f.endswith('.jpg')]
-        self.gts = [gt_root + f for f in os.listdir(gt_root) if f.endswith('.jpg')
-                    or f.endswith('.png')]
+        # 只取COD10K，共3040张
+        self.images = [image_root + f for f in os.listdir(image_root) if f.endswith('.jpg') and f.startswith('COD10K') ]
+        self.gts = [gt_root + f for f in os.listdir(gt_root) if f.endswith('.jpg') and f.startswith('COD10K')
+                    or f.endswith('.png') and f.startswith('COD10K')]
         # self.grads = [grad_root + f for f in os.listdir(grad_root) if f.endswith('.jpg')
         #               or f.endswith('.png')]
         # self.depths = [depth_root + f for f in os.listdir(depth_root) if f.endswith('.bmp')
@@ -111,10 +118,13 @@ class PolypObjDataset(data.Dataset):
             transforms.ToTensor()])
         # get size of dataset
         self.size = len(self.images)
+        # 生成label_mask形式的图片，保存在pre_encoded文件夹下
+        self.setup_annotations()
 
     def __getitem__(self, index):
         # read imgs/gts/grads/depths
         image = self.rgb_loader(self.images[index])
+        # 转为灰度图
         gt = self.binary_loader(self.gts[index])
         # data augumentation
         image, gt = cv_random_flip(image, gt)
@@ -122,7 +132,8 @@ class PolypObjDataset(data.Dataset):
         image, gt = randomRotation(image, gt)
 
         image = colorEnhance(image)
-        gt = randomPeper(gt)
+        # 椒盐噪声
+        # gt = randomPeper(gt)
 
         image = self.img_transform(image)
         gt = self.gt_transform(gt)
@@ -155,6 +166,29 @@ class PolypObjDataset(data.Dataset):
     def __len__(self):
         return self.size
 
+    def encode_segmap(self, gt):
+        mask = imageio.imread(gt)
+        mask = mask.astype(np.uint8)
+        cls = os.path.basename(gt).split('-')[5]
+        cls_num = self.CLASSES.index(cls.lower())
+        mask = np.where(mask == 255, cls_num, mask)
+        return mask
+
+
+    def setup_annotations(self):
+        """pre-encode all segmentation labels into the common label_mask format,
+        Under this format, each mask is an (M,N) array of integer values from 0 
+        to num_class+1, where 0 represents the background class.
+        """
+        target_path = "/home/liuxiangyu/SINet-V2-multi-class/Dataset/TrainValDataset/pre_encoded"
+        if not os.path.exists(target_path):
+            os.makedirs(target_path)
+            print("Pre-encoding segmentation masks...")
+            for i, gt in enumerate(tqdm(self.gts)):
+                lbl = self.encode_segmap(gt)
+                imageio.imsave(os.path.join(target_path, os.path.basename(gt)), lbl)
+        self.gts = [os.path.join(target_path,os.path.basename(gt)) for gt in self.gts]
+    
 
 # dataloader for training
 def get_loader(image_root, gt_root, batchsize, trainsize,

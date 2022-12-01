@@ -1,5 +1,6 @@
 # author: Daniel-Ji (e-mail: gepengai.ji@gmail.com)
 # data: 2021-01-16
+import imp
 import os
 import torch
 import torch.nn.functional as F
@@ -12,12 +13,15 @@ from utils.utils import clip_gradient, adjust_lr
 from tensorboardX import SummaryWriter
 import logging
 import torch.backends.cudnn as cudnn
+import numpy as np
 
 
 def structure_loss(pred, mask):
     """
     loss function (ref: F3Net-AAAI-2020)
     """
+    print('structure_loss, shape of pred:', np.shape(pred))
+    print('structure_loss, shape of mask:', np.shape(mask))
     weit = 1 + 5 * torch.abs(F.avg_pool2d(mask, kernel_size=31, stride=1, padding=15) - mask)
     wbce = F.binary_cross_entropy_with_logits(pred, mask, reduce='none')
     wbce = (weit * wbce).sum(dim=(2, 3)) / weit.sum(dim=(2, 3))
@@ -149,12 +153,12 @@ if __name__ == '__main__':
     parser.add_argument('--decay_epoch', type=int, default=50, help='every n epochs decay learning rate')
     parser.add_argument('--load', type=str, default=None, help='train from checkpoints')
     parser.add_argument('--gpu_id', type=str, default='0', help='train use gpu')
-    parser.add_argument('--train_root', type=str, default='./Dataset/TrainValDataset/',
+    parser.add_argument('--train_root', type=str, default='/home/liuxiangyu/SINet-V2-multi-class/Dataset/TrainValDataset/',
                         help='the training rgb images root')
-    parser.add_argument('--val_root', type=str, default='./Dataset/TestDataset/CAMO/',
+    parser.add_argument('--val_root', type=str, default='/home/liuxiangyu/SINet-V2-multi-class/Dataset/TestDataset/COD10K/',
                         help='the test rgb images root')
     parser.add_argument('--save_path', type=str,
-                        default='./snapshot/SINet_V2/',
+                        default='/home/liuxiangyu/SINet-V2-multi-class/snapshot/SINet_V2/',
                         help='the path to save model and log')
     opt = parser.parse_args()
 

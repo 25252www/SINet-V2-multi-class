@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from lib.Res2Net_v1b import res2net50_v1b_26w_4s
+import numpy as np
 
 
 class BasicConv2d(nn.Module):
