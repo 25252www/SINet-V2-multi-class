@@ -153,7 +153,7 @@ class ReverseStage(nn.Module):
 
 class Network(nn.Module):
     # res2net based encoder decoder
-    def __init__(self, channel=32, imagenet_pretrained=True):
+    def __init__(self, num_classes, channel=32, imagenet_pretrained=True):
         super(Network, self).__init__()
         # ---- ResNet Backbone ----
         self.resnet = res2net50_v1b_26w_4s(pretrained=imagenet_pretrained)
@@ -168,6 +168,8 @@ class Network(nn.Module):
         self.RS5 = ReverseStage(channel)
         self.RS4 = ReverseStage(channel)
         self.RS3 = ReverseStage(channel)
+        #  SegmentationHead
+        self.SegmentationHead = nn.Conv2d(1, num_classes, kernel_size=1, padding=0)
 
     def forward(self, x):
         # Feature Extraction
@@ -187,30 +189,34 @@ class Network(nn.Module):
 
         # Neighbourhood Connected Decoder
         S_g = self.NCD(x4_rfb, x3_rfb, x2_rfb)
-        S_g_pred = F.interpolate(S_g, scale_factor=8, mode='bilinear')    # Sup-1 (bs, 1, 44, 44) -> (bs, 1, 352, 352)
+        S_g_segmentation_head = self.SegmentationHead(S_g) # (bs, 1, 44, 44) -> (bs, num_classes, 44, 44)
+        S_g_pred = F.interpolate(S_g_segmentation_head, scale_factor=8, mode='bilinear')    # Sup-1 (bs, 1, 44, 44) -> (bs, 1, 352, 352)
 
         # ---- reverse stage 5 ----
         guidance_g = F.interpolate(S_g, scale_factor=0.25, mode='bilinear')
         ra4_feat = self.RS5(x4_rfb, guidance_g)
         S_5 = ra4_feat + guidance_g
-        S_5_pred = F.interpolate(S_5, scale_factor=32, mode='bilinear')  # Sup-2 (bs, 1, 11, 11) -> (bs, 1, 352, 352)
+        S_5_segmentation_head = self.SegmentationHead(S_5) # (bs, 1, 11, 11) -> (bs, num_classes, 11, 11)
+        S_5_pred = F.interpolate(S_5_segmentation_head, scale_factor=32, mode='bilinear')  # Sup-2 (bs, num_classes, 11, 11) -> (bs, num_classes, 352, 352)
 
         # ---- reverse stage 4 ----
         guidance_5 = F.interpolate(S_5, scale_factor=2, mode='bilinear')
         ra3_feat = self.RS4(x3_rfb, guidance_5)
         S_4 = ra3_feat + guidance_5
-        S_4_pred = F.interpolate(S_4, scale_factor=16, mode='bilinear')  # Sup-3 (bs, 1, 22, 22) -> (bs, 1, 352, 352)
+        S_4_segmentation_head = self.SegmentationHead(S_4) # (bs, 1, 22, 22) -> (bs, num_classes, 22, 22)
+        S_4_pred = F.interpolate(S_4_segmentation_head, scale_factor=16, mode='bilinear')  # Sup-3 (bs, num_classes, 22, 22) -> (bs, num_classes, 352, 352)
 
         # ---- reverse stage 3 ----
         guidance_4 = F.interpolate(S_4, scale_factor=2, mode='bilinear')
         ra2_feat = self.RS3(x2_rfb, guidance_4)
         S_3 = ra2_feat + guidance_4
-        S_3_pred = F.interpolate(S_3, scale_factor=8, mode='bilinear')   # Sup-4 (bs, 1, 44, 44) -> (bs, 1, 352, 352)
+        S_3_segmentation_head = self.SegmentationHead(S_3) # (bs, 1, 44, 44) -> (bs, num_classes, 44, 44)
+        S_3_pred = F.interpolate(S_3_segmentation_head, scale_factor=8, mode='bilinear')   # Sup-4 (bs, num_classes, 44, 44) -> (bs, num_classes, 352, 352)
 
-        print('shape of S_g_pred:',np.shape(S_g_pred))
-        print('shape of S_5_pred:',np.shape(S_5_pred))
-        print('shape of S_4_pred:',np.shape(S_4_pred))
-        print('shape of S_3_pred:',np.shape(S_3_pred))
+        # print('shape of S_g_pred:',np.shape(S_g_pred))
+        # print('shape of S_5_pred:',np.shape(S_5_pred))
+        # print('shape of S_4_pred:',np.shape(S_4_pred))
+        # print('shape of S_3_pred:',np.shape(S_3_pred))
         return S_g_pred, S_5_pred, S_4_pred, S_3_pred
 
 
