@@ -1,7 +1,9 @@
 import os
 from PIL import Image
+
 import torch.utils.data as data
 import torchvision.transforms as transforms
+from torchvision.transforms import InterpolationMode
 import random
 import numpy as np
 from PIL import ImageEnhance
@@ -32,11 +34,11 @@ def randomCrop(image, label):
 
 
 def randomRotation(image, label):
-    mode = Image.BICUBIC
     if random.random() > 0.8:
         random_angle = np.random.randint(-15, 15)
-        image = image.rotate(random_angle, mode)
-        label = label.rotate(random_angle, mode)
+        # rotate默认mode=PIL.Image.NEAREST
+        image = image.rotate(random_angle)
+        label = label.rotate(random_angle)
     return image, label
 
 
@@ -95,10 +97,9 @@ class PolypObjDataset(data.Dataset):
         self.images = [image_root + f for f in os.listdir(image_root) if f.endswith('.jpg') and f.startswith('COD10K') ]
         self.gts = [gt_root + f for f in os.listdir(gt_root) if f.endswith('.jpg') and f.startswith('COD10K')
                     or f.endswith('.png') and f.startswith('COD10K')]
-        # self.grads = [grad_root + f for f in os.listdir(grad_root) if f.endswith('.jpg')
-        #               or f.endswith('.png')]
-        # self.depths = [depth_root + f for f in os.listdir(depth_root) if f.endswith('.bmp')
-        #                or f.endswith('.png')]
+        # images和gts只取在classes中的类别
+        self.images = [image for image in self.images if os.path.basename(image).split('-')[5].lower() in self.classes]
+        self.gts = [gt for gt in self.gts if os.path.basename(gt).split('-')[5].lower() in self.classes]
         # sorted files
         self.images = sorted(self.images)
         self.gts = sorted(self.gts)
@@ -111,9 +112,13 @@ class PolypObjDataset(data.Dataset):
             transforms.Resize((self.trainsize, self.trainsize)),
             transforms.ToTensor(),
             transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])])
+        # self.gt_transform = transforms.Compose([
+        #     transforms.Resize((self.trainsize, self.trainsize)),
+        #     transforms.ToTensor()])
+        # 转换为mask形式，nearest插值不增加新的像素，PILToTensor()将PIL Image转为tensor，不归一化
         self.gt_transform = transforms.Compose([
-            transforms.Resize((self.trainsize, self.trainsize)),
-            transforms.ToTensor()])
+            transforms.Resize((self.trainsize, self.trainsize), interpolation=InterpolationMode.NEAREST),
+            transforms.PILToTensor()])
         # get size of dataset
         self.size = len(self.images)
         # 生成label_mask形式的图片，保存在pre_encoded文件夹下
@@ -135,6 +140,18 @@ class PolypObjDataset(data.Dataset):
 
         image = self.img_transform(image)
         gt = self.gt_transform(gt)
+
+        # print(self.images[index], "的类别包含", np.unique(gt))
+        # 如果gt包含>2种像素，报错
+        if len(np.unique(gt)) > 2:
+            raise ValueError('gt包含>2种像素',np.unique(gt), self.gts[index])
+
+        # print(type(gt))
+        # print(np.shape(gt))
+        # for i in range(np.shape(gt)[1]):
+        #     for j in range(np.shape(gt)[2]):
+        #         print(gt[0][i][j].item(),end='', file=open("/home/liuxiangyu/SINet-V2-multi-class/gt.txt", "a"))
+        #     print('\n', file=open("/home/liuxiangyu/SINet-V2-multi-class/gt.txt", "a"))
 
         return image, gt
 
@@ -208,13 +225,17 @@ class test_dataset:
         self.classes = classes
         self.images = [image_root + f for f in os.listdir(image_root) if f.endswith('.jpg') or f.endswith('.png')]
         self.gts = [gt_root + f for f in os.listdir(gt_root) if f.endswith('.tif') or f.endswith('.png')]
+        # images和gts只取在classes中的类别
+        self.images = [image for image in self.images if os.path.basename(image).split('-')[5].lower() in self.classes]
+        self.gts = [gt for gt in self.gts if os.path.basename(gt).split('-')[5].lower() in self.classes]
         self.images = sorted(self.images)
         self.gts = sorted(self.gts)
         self.transform = transforms.Compose([
             transforms.Resize((self.testsize, self.testsize)),
             transforms.ToTensor(),
             transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])])
-        self.gt_transform = transforms.ToTensor()
+        # self.gt_transform = transforms.ToTensor()
+        self.gt_transform = transforms.PILToTensor()
         self.size = len(self.images)
         self.index = 0
         # 生成label_mask形式的图片，保存在pre_encoded文件夹下
@@ -236,6 +257,19 @@ class test_dataset:
 
         self.index += 1
         self.index = self.index % self.size
+
+        # 测试gt是否正确
+        # print(type(gt))
+        # print(np.shape(gt))
+        # gt_print = np.array(gt)
+        # with open("/home/liuxiangyu/SINet-V2-multi-class/gt.txt", "a") as f:
+        #     f.truncate(0)
+        #     for i in range(np.shape(gt_print)[0]):
+        #         for j in range(np.shape(gt_print)[1]):
+        #             print(gt_print[i][j].item(),end='', file=open("/home/liuxiangyu/SINet-V2-multi-class/gt.txt", "a"))
+        #         # 添加换行符
+        #         print('', file=open("/home/liuxiangyu/SINet-V2-multi-class/gt.txt", "a"))
+                
 
         return image, gt, name, np.array(image_for_post)
 

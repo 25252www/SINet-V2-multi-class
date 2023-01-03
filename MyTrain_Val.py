@@ -18,6 +18,7 @@ import numpy as np
 import argparse
 import yaml
 from utils.eval import *
+from tqdm import tqdm 
 
 def structure_loss(pred, mask):
     """
@@ -66,7 +67,11 @@ class FocalLoss(nn.Module):
         if self.size_average: return loss.mean()
         return loss.sum()
 
-
+def DiceLoss(pred, target):
+    """
+    Dice loss function
+    """
+    
 def train(train_loader, model, optimizer, epoch, save_path, writer):
     """
     train function
@@ -80,12 +85,15 @@ def train(train_loader, model, optimizer, epoch, save_path, writer):
             optimizer.zero_grad()
 
             images = images.cuda()
+            
             gts = gts.squeeze(1) # (bs, 1, H, W) -> (bs, H, W)
             gts = gts.type(torch.LongTensor)
             gts = gts.cuda()
 
             preds = model(images)
-            lossfunc = FocalLoss()
+            # 交叉熵损失
+            lossfunc = nn.CrossEntropyLoss()
+            # lossfunc = FocalLoss()
             loss_init = lossfunc(preds[0], gts) + lossfunc(preds[1], gts) + lossfunc(preds[2], gts)
             loss_final = lossfunc(preds[3], gts)
 
@@ -150,8 +158,8 @@ def val(test_loader, model, epoch, save_path, writer, classes, is_last_epoch):
     global best_miou, best_epoch
     model.eval()
     with torch.no_grad():
-        confusion_matrix= np.zeros((len(classes), len(classes)))
-        for i in range(test_loader.size):
+        confusion_matrix= torch.zeros(len(classes), len(classes)).cuda()
+        for i in tqdm(range(test_loader.size)):
             image, gt, name, img_for_post = test_loader.load_data()
             image = image.cuda()
             res5, res4, res3, res2 = model(image)
@@ -163,12 +171,22 @@ def val(test_loader, model, epoch, save_path, writer, classes, is_last_epoch):
             # resize到原大小，采用临近插值法，不会出现新的数值
             res = F.interpolate(res, size=np.array(gt).shape, mode='nearest')
             res = res.squeeze()
-            # 计算混淆矩阵
-            confusion_matrix += get_confusion_matrix(
-                np.array(res.cpu()), np.array(gt), len(classes))
+            # 计算混淆矩阵，使用gpu加速
+            # res的类型是gpu的tensor
+            # gt的类型是PIL的image，转换为gpu的tensor
+            gt = torch.from_numpy(np.array(gt)).cuda()
+            # 计算混淆矩阵，累加到confusion_matrix
+            confusion_matrix += get_confusion_matrix(res, gt, len(classes))
+
+        print('confusion_matrix')
+        print(confusion_matrix)
         # 计算iou和miou
+        # 打印confusion_matrix，是一个二元数组
         iou = cal_iou(confusion_matrix, len(classes))
-        miou = np.mean(iou)
+        # 打印iou
+        for index, i in enumerate(iou):
+            print('iou of class {}: {:.4f}'.format(classes[index], i))
+        miou = torch.mean(iou)
         print('Epoch: {}, miou: {}, bestmiou: {}, bestEpoch: {}.'.format(epoch, miou, best_miou, best_epoch))
         if epoch == 1:
             best_miou = miou
@@ -185,9 +203,9 @@ def val(test_loader, model, epoch, save_path, writer, classes, is_last_epoch):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--epoch', type=int, default=100, help='epoch number')
+    parser.add_argument('--epoch', type=int, default=10, help='epoch number')
     parser.add_argument('--lr', type=float, default=1e-4, help='learning rate')
-    parser.add_argument('--batchsize', type=int, default=8, help='training batch size')
+    parser.add_argument('--batchsize', type=int, default=10, help='training batch size')
     parser.add_argument('--trainsize', type=int, default=352, help='training dataset size')
     parser.add_argument('--clip', type=float, default=0.5, help='gradient clipping margin')
     parser.add_argument('--decay_rate', type=float, default=0.1, help='decay rate of learning rate')
@@ -201,7 +219,7 @@ if __name__ == '__main__':
     parser.add_argument('--save_path', type=str,
                         default='/home/liuxiangyu/SINet-V2-multi-class/snapshot/SINet_V2/',
                         help='the path to save model and log')
-    with open('./config.yaml', 'r', encoding='utf-8') as f:
+    with open('/home/liuxiangyu/SINet-V2-multi-class/config.yaml', 'r', encoding='utf-8') as f:
             cfg = yaml.safe_load(f)
             parser.set_defaults(**cfg)
     opt = parser.parse_args()
@@ -217,6 +235,11 @@ if __name__ == '__main__':
 
     # build the model
     model = Network(num_classes = len(opt.CLASSES), channel=32).cuda()
+    model_state = torch.load('/home/liuxiangyu/SINet-V2-multi-class/snapshot/Net_binary.pth')
+    # 打印model_state的keys
+    # print(model_state.keys())
+    model.load_state_dict(model_state, strict=False)
+    print('load model from binary segmentation weights')
 
     if opt.load is not None:
         model.load_state_dict(torch.load(opt.load))
@@ -253,8 +276,8 @@ if __name__ == '__main__':
 
     step = 0
     writer = SummaryWriter(save_path + 'summary')
-    best_mae = 1
-    best_epoch = 0
+    best_miou = 0
+    best_epoch = 1
 
     print("Start train...")
     for epoch in range(1, opt.epoch+1):

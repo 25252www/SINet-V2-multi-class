@@ -1,4 +1,5 @@
 import numpy as np
+import torch
 
 # 根据类别数生成colormap，范围0-255
 def get_colormap(num_classes):
@@ -20,8 +21,8 @@ def get_colormap(num_classes):
         cmap[i, 2] = b
 
     cmap = cmap.astype(np.uint8)
-    # 打印cmap
-    print('cmap: ', cmap)
+    # # 打印cmap
+    # print('cmap: ', cmap)
     return cmap
 
 # 根据label_mask和colormap生成彩色图，返回rgb整型数组，范围0-255
@@ -42,18 +43,20 @@ def decode_segmap(label_mask, colormap, classes):
     rgb[:, :, 2] = b
     return rgb.astype(np.uint8)
 
-
+# res, gt都是gpu上的tensor
 def get_confusion_matrix(res, gt, num_classes):
-    confusion_matrix = np.zeros((num_classes, num_classes))
+    confusion_matrix = torch.zeros(num_classes, num_classes).cuda()
     for i in range(num_classes):
         for j in range(num_classes):
-            confusion_matrix[i, j] = np.sum((res == i) * (gt == j))
+            confusion_matrix[i, j] = torch.sum((res == i) & (gt == j))
     return confusion_matrix
 
+
 # 通过混淆矩阵计算iou
+# confusion_matrix是gpu上的tensor
 def cal_iou(confusion_matrix, num_classes):
-    iou = np.zeros(num_classes)
+    iou = torch.zeros(num_classes).cuda()
     for i in range(num_classes):
-        iou[i] = confusion_matrix[i, i] / (np.sum(confusion_matrix[i, :]) + np.sum(
+        iou[i] = confusion_matrix[i, i] / (torch.sum(confusion_matrix[i, :]) + torch.sum(
             confusion_matrix[:, i]) - confusion_matrix[i, i])
     return iou
