@@ -60,7 +60,7 @@ class RFB_modified(nn.Module):
 
 
 class NeighborConnectionDecoder(nn.Module):
-    def __init__(self, channel):
+    def __init__(self, channel, num_classes):
         super(NeighborConnectionDecoder, self).__init__()
         self.upsample = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
         self.conv_upsample1 = BasicConv2d(channel, channel, 3, padding=1)
@@ -72,7 +72,7 @@ class NeighborConnectionDecoder(nn.Module):
         self.conv_concat2 = BasicConv2d(2*channel, 2*channel, 3, padding=1)
         self.conv_concat3 = BasicConv2d(3*channel, 3*channel, 3, padding=1)
         self.conv4 = BasicConv2d(3*channel, 3*channel, 3, padding=1)
-        self.conv5 = nn.Conv2d(3*channel, 1, 1)
+        self.conv5 = nn.Conv2d(3*channel, num_classes, 1)
 
     def forward(self, x1, x2, x3):
         x1_1 = x1
@@ -93,19 +93,23 @@ class NeighborConnectionDecoder(nn.Module):
 
 # Group-Reversal Attention (GRA) Block
 class GRA(nn.Module):
-    def __init__(self, channel, subchannel):
+    def __init__(self, channel, subchannel, num_classes):
         super(GRA, self).__init__()
-        self.group = channel//subchannel
+        self.group = channel//subchannel # channel=32时，依次为1, 4, 32
         self.conv = nn.Sequential(
-            nn.Conv2d(channel + self.group, channel, 3, padding=1), nn.ReLU(True),
+            nn.Conv2d(channel + self.group*num_classes, channel, 3, padding=1), nn.ReLU(True),
         )
-        self.score = nn.Conv2d(channel, 1, 3, padding=1)
+        self.score = nn.Conv2d(channel, num_classes, 3, padding=1)
 
     def forward(self, x, y):
+        """
+        x: shape=(batch_size, channel, h, w)
+        y: shape=(batch_size, num_classes, h, w)
+        """
         if self.group == 1:
-            x_cat = torch.cat((x, y), 1)
+            x_cat = torch.cat((x, y), 1) # dim=1，沿着通道方向拼接
         elif self.group == 2:
-            xs = torch.chunk(x, 2, dim=1)
+            xs = torch.chunk(x, 2, dim=1) # 将x沿着通道方向分成2份，每份的shape=(batch_size, channel//2, h, w)
             x_cat = torch.cat((xs[0], y, xs[1], y), 1)
         elif self.group == 4:
             xs = torch.chunk(x, 4, dim=1)
@@ -133,13 +137,18 @@ class GRA(nn.Module):
 
 
 class ReverseStage(nn.Module):
-    def __init__(self, channel):
+    def __init__(self, channel, num_classes):
         super(ReverseStage, self).__init__()
-        self.weak_gra = GRA(channel, channel)
-        self.medium_gra = GRA(channel, 8)
-        self.strong_gra = GRA(channel, 1)
+        self.weak_gra = GRA(channel, channel, num_classes)
+        self.medium_gra = GRA(channel, 8, num_classes)
+        self.strong_gra = GRA(channel, 1, num_classes)
 
     def forward(self, x, y):
+        """
+        x: shape=(batch_size, channel, h, w)
+        y: shape=(batch_size, num_classes, h, w)
+        """
+
         # reverse guided block
         y = -1 * (torch.sigmoid(y)) + 1
 
@@ -161,15 +170,13 @@ class Network(nn.Module):
         self.rfb2_1 = RFB_modified(512, channel)
         self.rfb3_1 = RFB_modified(1024, channel)
         self.rfb4_1 = RFB_modified(2048, channel)
-        # ---- Partial Decoder ----
-        self.NCD = NeighborConnectionDecoder(channel)
+        # ---- Partial Decoder 改输出通道数为num_classes ----
+        self.NCD = NeighborConnectionDecoder(channel, num_classes)
 
-        # # ---- reverse stage ----
-        self.RS5 = ReverseStage(channel)
-        self.RS4 = ReverseStage(channel)
-        self.RS3 = ReverseStage(channel)
-        #  SegmentationHead
-        self.SegmentationHead = nn.Conv2d(1, num_classes, kernel_size=1, padding=0)
+        # # ---- reverse stage 改输出通道数为num_classes----
+        self.RS5 = ReverseStage(channel, num_classes)
+        self.RS4 = ReverseStage(channel, num_classes)
+        self.RS3 = ReverseStage(channel, num_classes)
 
     def forward(self, x):
         # Feature Extraction
@@ -189,34 +196,26 @@ class Network(nn.Module):
 
         # Neighbourhood Connected Decoder
         S_g = self.NCD(x4_rfb, x3_rfb, x2_rfb)
-        S_g_segmentation_head = self.SegmentationHead(S_g) # (bs, 1, 44, 44) -> (bs, num_classes, 44, 44)
-        S_g_pred = F.interpolate(S_g_segmentation_head, scale_factor=8, mode='bilinear')    # Sup-1 (bs, 1, 44, 44) -> (bs, 1, 352, 352)
+        S_g_pred = F.interpolate(S_g, scale_factor=8, mode='bilinear')    # Sup-1 (bs, num_classes, 44, 44) -> (bs, num_classes, 352, 352)
 
         # ---- reverse stage 5 ----
         guidance_g = F.interpolate(S_g, scale_factor=0.25, mode='bilinear')
         ra4_feat = self.RS5(x4_rfb, guidance_g)
         S_5 = ra4_feat + guidance_g
-        S_5_segmentation_head = self.SegmentationHead(S_5) # (bs, 1, 11, 11) -> (bs, num_classes, 11, 11)
-        S_5_pred = F.interpolate(S_5_segmentation_head, scale_factor=32, mode='bilinear')  # Sup-2 (bs, num_classes, 11, 11) -> (bs, num_classes, 352, 352)
+        S_5_pred = F.interpolate(S_5, scale_factor=32, mode='bilinear')  # Sup-2 (bs, num_classes, 11, 11) -> (bs, num_classes, 352, 352)
 
         # ---- reverse stage 4 ----
         guidance_5 = F.interpolate(S_5, scale_factor=2, mode='bilinear')
         ra3_feat = self.RS4(x3_rfb, guidance_5)
         S_4 = ra3_feat + guidance_5
-        S_4_segmentation_head = self.SegmentationHead(S_4) # (bs, 1, 22, 22) -> (bs, num_classes, 22, 22)
-        S_4_pred = F.interpolate(S_4_segmentation_head, scale_factor=16, mode='bilinear')  # Sup-3 (bs, num_classes, 22, 22) -> (bs, num_classes, 352, 352)
+        S_4_pred = F.interpolate(S_4, scale_factor=16, mode='bilinear')  # Sup-3 (bs, num_classes, 22, 22) -> (bs, num_classes, 352, 352)
 
         # ---- reverse stage 3 ----
         guidance_4 = F.interpolate(S_4, scale_factor=2, mode='bilinear')
         ra2_feat = self.RS3(x2_rfb, guidance_4)
         S_3 = ra2_feat + guidance_4
-        S_3_segmentation_head = self.SegmentationHead(S_3) # (bs, 1, 44, 44) -> (bs, num_classes, 44, 44)
-        S_3_pred = F.interpolate(S_3_segmentation_head, scale_factor=8, mode='bilinear')   # Sup-4 (bs, num_classes, 44, 44) -> (bs, num_classes, 352, 352)
+        S_3_pred = F.interpolate(S_3, scale_factor=8, mode='bilinear')   # Sup-4 (bs, num_classes, 44, 44) -> (bs, num_classes, 352, 352)
 
-        # print('shape of S_g_pred:',np.shape(S_g_pred))
-        # print('shape of S_5_pred:',np.shape(S_5_pred))
-        # print('shape of S_4_pred:',np.shape(S_4_pred))
-        # print('shape of S_3_pred:',np.shape(S_3_pred))
         return S_g_pred, S_5_pred, S_4_pred, S_3_pred
 
 
