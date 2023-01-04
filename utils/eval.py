@@ -27,7 +27,8 @@ def get_colormap(num_classes):
 
 # 根据label_mask和colormap生成彩色图，返回rgb整型数组，范围0-255
 def decode_segmap(label_mask, colormap, classes):
-    # dev: 打印label_mask包含的类别
+    # 打印label_mask包含的类别
+    print(np.unique(label_mask))
     classes = [classes[i] for i in np.unique(label_mask)]
     print('pic contains classes: ', classes)
     r = label_mask.copy()

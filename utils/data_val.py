@@ -9,6 +9,7 @@ import numpy as np
 from PIL import ImageEnhance
 import imageio
 from tqdm import tqdm
+import utils.eval as eval
 
 
 # several data augumentation strategies
@@ -195,14 +196,28 @@ class PolypObjDataset(data.Dataset):
         Under this format, each mask is an (M,N) array of integer values from 0 
         to num_class+1, where 0 represents the background class.
         """
-        target_path = "/home/liuxiangyu/SINet-V2-multi-class/Dataset/TrainValDataset/pre_encoded"
-        if not os.path.exists(target_path):
-            os.makedirs(target_path)
+        pre_encoded_path = "/home/liuxiangyu/SINet-V2-multi-class/Dataset/TrainValDataset/pre_encoded"
+        colored_gt_path = "/home/liuxiangyu/SINet-V2-multi-class/Dataset/TrainValDataset/colored_gt"
+        if not os.path.exists(pre_encoded_path):
+            os.makedirs(pre_encoded_path)
             print("trainvaldataset: Pre-encoding segmentation masks...")
             for i, gt in enumerate(tqdm(self.gts)):
                 lbl = self.encode_segmap(gt)
-                imageio.imsave(os.path.join(target_path, os.path.basename(gt)), lbl)
-        self.gts = [os.path.join(target_path,os.path.basename(gt)) for gt in self.gts]
+                imageio.imsave(os.path.join(pre_encoded_path, os.path.basename(gt)), lbl)
+        self.gts = [os.path.join(pre_encoded_path,os.path.basename(gt)) for gt in self.gts]
+        if not os.path.exists(colored_gt_path):
+            os.makedirs(colored_gt_path)
+            print("trainvaldataset: Coloring segmentation gts...")
+            print(self.classes)
+            print(type(self.classes))
+            colormap = eval.get_colormap(len(self.classes))
+            for i, gt in enumerate(tqdm(self.gts)):
+                gt_img = self.binary_loader(gt)
+                gt_img = np.array(gt_img)
+                rgb = eval.decode_segmap(gt_img, colormap, self.classes)
+                imageio.imsave(os.path.join(colored_gt_path,os.path.basename(gt)), rgb)
+                
+                
     
 
 # dataloader for training
@@ -300,13 +315,22 @@ class test_dataset:
         Under this format, each mask is an (M,N) array of integer values from 0 
         to num_class+1, where 0 represents the background class.
         """
-        target_path = "/home/liuxiangyu/SINet-V2-multi-class/Dataset/TestDataset/COD10K/pre_encoded"
-        if not os.path.exists(target_path):
-            os.makedirs(target_path)
+        pre_encoded_path = "/home/liuxiangyu/SINet-V2-multi-class/Dataset/TestDataset/COD10K/pre_encoded"
+        colored_gt_path = "/home/liuxiangyu/SINet-V2-multi-class/Dataset/TestDataset/COD10K/colored_gt"
+        if not os.path.exists(pre_encoded_path):
+            os.makedirs(pre_encoded_path)
             print("testdataset: Pre-encoding segmentation masks...")
             for i, gt in enumerate(tqdm(self.gts)):
                 lbl = self.encode_segmap(gt)
-                imageio.imsave(os.path.join(target_path, os.path.basename(gt)), lbl)
-        self.gts = [os.path.join(target_path,os.path.basename(gt)) for gt in self.gts]
-    
+                imageio.imsave(os.path.join(pre_encoded_path, os.path.basename(gt)), lbl)
+        self.gts = [os.path.join(pre_encoded_path,os.path.basename(gt)) for gt in self.gts]
+        if not os.path.exists(colored_gt_path):
+            os.makedirs(colored_gt_path)
+            print("trainvaldataset: Coloring segmentation gts...")
+            colormap = eval.get_colormap(len(self.classes))
+            for i, gt in enumerate(tqdm(self.gts)):
+                gt_img = self.binary_loader(gt)
+                gt_img = np.array(gt_img)
+                rgb = eval.decode_segmap(gt_img, colormap, self.classes)
+                imageio.imsave(os.path.join(colored_gt_path, os.path.basename(gt)), rgb)
 
