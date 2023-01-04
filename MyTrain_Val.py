@@ -187,7 +187,6 @@ def val(test_loader, model, epoch, save_path, writer, classes, is_last_epoch):
         for index, i in enumerate(iou):
             print('iou of class {}: {:.4f}'.format(classes[index], i))
         miou = torch.mean(iou)
-        print('Epoch: {}, miou: {}, bestmiou: {}, bestEpoch: {}.'.format(epoch, miou, best_miou, best_epoch))
         if epoch == 1:
             best_miou = miou
         else:
@@ -196,6 +195,7 @@ def val(test_loader, model, epoch, save_path, writer, classes, is_last_epoch):
                 best_epoch = epoch
                 torch.save(model.state_dict(), save_path + 'Net_epoch_best.pth')
                 print('Save state_dict successfully! Best epoch:{}.'.format(epoch))
+        print('Epoch: {}, miou: {}, bestmiou: {}, bestEpoch: {}.'.format(epoch, miou, best_miou, best_epoch))
         logging.info(
             '[Val Info]:Epoch: {}, miou: {}, bestmiou: {}, bestEpoch: {}'.format(epoch, miou, best_miou, best_epoch))
         if is_last_epoch:
@@ -211,7 +211,7 @@ if __name__ == '__main__':
     parser.add_argument('--decay_rate', type=float, default=0.1, help='decay rate of learning rate')
     parser.add_argument('--decay_epoch', type=int, default=50, help='every n epochs decay learning rate')
     parser.add_argument('--load', type=str, default=None, help='train from checkpoints')
-    parser.add_argument('--gpu_id', type=str, default='1', help='train use gpu')
+    parser.add_argument('--gpu_id', type=str, default='0', help='train use gpu')
     parser.add_argument('--train_root', type=str, default='/home/liuxiangyu/SINet-V2-multi-class/Dataset/TrainValDataset/',
                         help='the training rgb images root')
     parser.add_argument('--val_root', type=str, default='/home/liuxiangyu/SINet-V2-multi-class/Dataset/TestDataset/COD10K/',
@@ -235,11 +235,11 @@ if __name__ == '__main__':
 
     # build the model
     model = Network(num_classes = len(opt.CLASSES), channel=32).cuda()
-    model_state = torch.load('/home/liuxiangyu/SINet-V2-multi-class/snapshot/Net_binary.pth')
-    # 打印model_state的keys
-    # print(model_state.keys())
-    model.load_state_dict(model_state, strict=False)
-    print('load model from binary segmentation weights')
+    pretrained_state_dict = torch.load('/home/liuxiangyu/SINet-V2-multi-class/snapshot/Net_binary.pth')
+    # 取shape相同的参数
+    pretrained_state_dict = {k:v for k,v in pretrained_state_dict.items() if v.shape == model.state_dict()[k].shape}
+    model.load_state_dict(pretrained_state_dict, strict=False)
+    print('load pretrained model from binary segmentation weights (original SINet_V2 Network)')
 
     if opt.load is not None:
         model.load_state_dict(torch.load(opt.load))
