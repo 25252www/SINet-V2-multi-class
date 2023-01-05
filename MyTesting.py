@@ -66,13 +66,6 @@ for _data_name in ['COD10K']:
         confusion_matrix += get_confusion_matrix(res, gt, len(opt.CLASSES))
         # colorize 对输出图着色
         colormap = get_colormap(len(opt.CLASSES))
-        """
-        类别['background', 'pipefish', 'katydid', 'spider']对应的rgb
-        [[  0   0   0]
-        [128   0   0]
-        [  0 128   0]
-        [128 128   0]]
-        """
         print('> {} - {} '.format(_data_name, name), end='')
         rgb = decode_segmap(np.array(res.cpu()), colormap=colormap, classes=opt.CLASSES)
         # 使用imageio保存彩色输出图
