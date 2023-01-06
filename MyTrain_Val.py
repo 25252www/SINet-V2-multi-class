@@ -186,6 +186,7 @@ def val(test_loader, model, epoch, save_path, writer, classes, is_last_epoch):
         # 打印iou
         for index, i in enumerate(iou):
             print('iou of class {}: {:.4f}'.format(classes[index], i))
+            logging.info('iou of class {}: {:.4f}'.format(classes[index], i))
         miou = torch.mean(iou)
         if epoch == 1:
             best_miou = miou
@@ -195,6 +196,7 @@ def val(test_loader, model, epoch, save_path, writer, classes, is_last_epoch):
                 best_epoch = epoch
                 torch.save(model.state_dict(), save_path + 'Net_epoch_best.pth')
                 print('Save state_dict successfully! Best epoch:{}.'.format(epoch))
+                logging.info('Save state_dict successfully! Best epoch:{}.'.format(epoch))
         print('Epoch: {}, miou: {}, bestmiou: {}, bestEpoch: {}.'.format(epoch, miou, best_miou, best_epoch))
         logging.info(
             '[Val Info]:Epoch: {}, miou: {}, bestmiou: {}, bestEpoch: {}'.format(epoch, miou, best_miou, best_epoch))
