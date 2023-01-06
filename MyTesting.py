@@ -24,8 +24,6 @@ with open('/home/liuxiangyu/SINet-V2-multi-class/config.yaml', 'r', encoding='ut
 opt = parser.parse_args()
 
 
-
-
 for _data_name in ['COD10K']:
     data_path = './Dataset/TestDataset/{}/'.format(_data_name)
     save_path = './res/{}/{}/'.format(opt.pth_path.split('/')[-2], _data_name)
@@ -46,7 +44,7 @@ for _data_name in ['COD10K']:
     image_root = '{}/Imgs/'.format(data_path)
     gt_root = '{}/GT/'.format(data_path)
     test_loader = test_dataset(image_root, gt_root, opt.testsize, opt.CLASSES)
-    confusion_matrix= torch.zeros(len(opt.CLASSES), len(opt.CLASSES)).cuda()
+    confusion_matrix = torch.zeros(len(opt.CLASSES), len(opt.CLASSES)).cuda()
 
     for i in range(test_loader.size):
         image, gt, name, _ = test_loader.load_data()
@@ -67,13 +65,15 @@ for _data_name in ['COD10K']:
         # colorize 对输出图着色
         colormap = get_colormap(len(opt.CLASSES))
         print('> {} - {} '.format(_data_name, name), end='')
-        rgb = decode_segmap(np.array(res.cpu()), colormap=colormap, classes=opt.CLASSES)
+        rgb = decode_segmap(np.array(res.cpu()),
+                            colormap=colormap, classes=opt.CLASSES)
         # 使用imageio保存彩色输出图
         imageio.imsave(save_path+name, rgb)
     # 计算iou
     iou = cal_iou(confusion_matrix, len(opt.CLASSES))
     # 打印每个类别的iou
     for i in range(len(opt.CLASSES)):
-        print('class {}: {}'.format(opt.CLASSES[i], iou[i]))
-    # 计算平均iou
-    print('mean iou: {}'.format(torch.mean(iou)))
+        # 输出字符串对齐
+        print('{:15}{}'.format(opt.CLASSES[i], iou[i]))
+    # 计算目标类miou
+    print('{:15}{}'.format('miou', torch.mean(iou[1:])))
